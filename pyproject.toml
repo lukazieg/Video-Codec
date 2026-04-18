@@ -1,0 +1,10 @@
+[project]
+name = "video-codec-project"
+version = "0.1.0"
+description = "Video Codec Project"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "numpy",
+    "tqdm",
+]
