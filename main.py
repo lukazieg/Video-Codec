@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from asyncio.windows_events import NULL
 from dataclasses import dataclass
 from pathlib import Path
 import struct
 import warnings
 
 from tqdm import tqdm
+from PIL import Image
 
 SOURCE_FILE = Path("source.y4m")
 OUTPUT_DIR = Path("output")
@@ -214,6 +216,48 @@ def unpack_metadata(reader: ByteReader) -> Y4MMetadata:
 # Students edit: yes | purpose: add helper functions for your codec.
 # ============================================================================
 
+def compress_lossless_color(metadata: Y4MMetadata, colors: bytes) -> bytes:
+    section_width = 3
+    section_height = 3
+
+    for x_section_start in range(0, metadata.width, section_width):
+        for y_section_start in range(0, metadata.height, section_height):
+            x_section_end = min(x_section_start + section_width - 1, metadata.width)
+            y_section_end = min(y_section_start + section_height - 1, metadata.height)
+            # color = colors[metadata.width * y_section_start + x_section_end]
+            for x in range(x_section_start, x_section_end):
+                for y in range(y_section_start, y_section_end):
+                    next_color = colors[metadata.width * y + x]
+                    # if next_color != color:
+
+
+def print_metadata(metadata: Y4MMetadata, frame: Frame) -> None:
+    print("width: " + str(metadata.width))
+    print("height: " + str(metadata.height))
+    print("amount pixels: " + str(metadata.width * metadata.height))
+    print("fps: " + str(metadata.fps))
+    print("interlacingt: " + str(metadata.interlacing))
+    print("aspect_ratio: " + str(metadata.aspect_ratio))
+    print("chroma: " + str(metadata.chroma))
+    print("y pixel per frame: " + str(len(frame.y)))
+    print("cb pixel per frame: " + str(len(frame.cb)))
+    print("cr pixel per frame: " + str(len(frame.cr)))
+
+
+def show_frame(metadata: Y4MMetadata, frame: Frame) -> None:
+    y_image = Image.frombytes("L", (int(metadata.width), int(metadata.height)), frame.y)
+    # fewer chroma values because of 4:2:0
+    cb_image = Image.frombytes("L", (metadata.width // 2, metadata.height // 2),
+                               frame.cb)  # TODO: make this work with only len(cb) and aspect ratio
+    cr_image = Image.frombytes("L", (metadata.width // 2, metadata.height // 2), frame.cr)
+
+    # rescale chroma values to full resolution
+    cb_image = cb_image.resize((metadata.width, metadata.height), Image.Resampling.NEAREST)
+    cr_image = cr_image.resize((metadata.width, metadata.height), Image.Resampling.NEAREST)
+
+    image = Image.merge("YCbCr", (y_image, cb_image, cr_image))
+    image.show()
+
 
 # ============================================================================
 # Student bitstream
@@ -318,6 +362,22 @@ def unpack_lossy_bitstream(data: bytes) -> tuple[Y4MMetadata, list[Frame]]:
 # ============================================================================
 
 def encode_lossless(metadata: Y4MMetadata, frames: list[Frame]) -> bytes:
+    metadata.width
+    metadata.height
+    # spatial compression
+    # in a section, save only one color or breightness value if they all match
+    # a section is defined as 3x3 in a grid pattern
+
+    print_metadata(metadata, frames[0])
+    show_frame(metadata, frames[0])
+
+    for frame in frames:
+        compress_lossless_color(metadata, frame.y)
+        compress_lossless_color(metadata, frame.cb)
+        compress_lossless_color(metadata, frame.cr)
+
+    # temporal compression
+
     """Implement lossless coding here."""
     return pack_lossless_bitstream(metadata, frames)
 
