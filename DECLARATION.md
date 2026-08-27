@@ -29,8 +29,8 @@ geprüft, verifiziert und überarbeitet.
 
 ## 3. Offenlegung der Nutzung generativer KI
 
-| Werkzeug             | Aufgabe / Funktion  | Art der Unterstützung                                                                               |
-|:---------------------|:--------------------|:----------------------------------------------------------------------------------------------------|
-| **ChatGPT 5.6 Luna** | **Bilddarstellung** | Genaueres erklären von YCbCr und Beispielcode für Pillow Bibliothek zur Bildanzeige bereitgestellt. |
-| ****                 | ****                |                                                                                                     |
-| ****                 | ****                |                                                                                                     |
+| Werkzeug             | Aufgabe / Funktion      | Art der Unterstützung                                                                               |
+|:---------------------|:------------------------|:----------------------------------------------------------------------------------------------------|
+| **ChatGPT 5.6 Luna** | **Bilddarstellung**     | Genaueres erklären von YCbCr und Beispielcode für Pillow Bibliothek zur Bildanzeige bereitgestellt. |
+| **ChatGPT 5.6 Luna** | **Encoding / Decoding** | Fragen zu Python Syntax beantwortet.                                                                |
+| ****                 | ****                    |                                                                                                     |

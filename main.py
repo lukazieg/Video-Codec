@@ -215,6 +215,42 @@ def unpack_metadata(reader: ByteReader) -> Y4MMetadata:
 # Student helpers
 # Students edit: yes | purpose: add helper functions for your codec.
 # ============================================================================
+@dataclass
+class SignedFrame:
+    y: list[int]
+    cb: list[int]
+    cr: list[int]
+
+
+def encode_predictive_compression(colors: bytes) -> list[int]:
+    compressed_colors = [colors[0]]
+    previous_color = colors[0]
+    for i in range(1, len(colors)):
+        difference = colors[i] - previous_color
+        previous_color = colors[i]
+        compressed_colors.append(difference)
+    return compressed_colors
+
+
+def decode_predictive_compression(differences: bytes) -> list[int]:
+    initial_color = differences[0]
+    colors = [initial_color]
+    previous_color = differences[0]
+    for i in range(1, len(differences)):
+        color = previous_color + differences[i]
+        previous_color = color
+        colors.append(color)
+    return colors
+
+
+def predictive_compression_efficiency_test(metadata: Y4MMetadata, frames: list[Frame]) -> list[int]:
+    print_metadata(metadata, frames[0])
+    print(encode_predictive_compression(metadata, frames[0].y))
+    for i in range(20):
+        print(len(encode_predictive_compression(metadata, frames[i].y)))
+        print(len(encode_predictive_compression(metadata, frames[i].cb)))
+        print(len(encode_predictive_compression(metadata, frames[i].cr)))
+
 
 def rle_efficiency_test(metadata: Y4MMetadata, frames: list[Frame]) -> None:
     print_metadata(metadata, frames[0])
@@ -255,7 +291,7 @@ def print_metadata(metadata: Y4MMetadata, frame: Frame) -> None:
     print("cr pixel per frame: " + str(len(frame.cr)))
 
 
-def show_frame(metadata: Y4MMetadata, frame: Frame) -> None:
+def display_frame(metadata: Y4MMetadata, frame: Frame) -> None:
     y_image = Image.frombytes("L", (int(metadata.width), int(metadata.height)), frame.y)
     # fewer chroma values because of 4:2:0
     cb_image = Image.frombytes("L", (metadata.width // 2, metadata.height // 2),
@@ -373,22 +409,29 @@ def unpack_lossy_bitstream(data: bytes) -> tuple[Y4MMetadata, list[Frame]]:
 # ============================================================================
 
 def encode_lossless(metadata: Y4MMetadata, frames: list[Frame]) -> bytes:
-    metadata.width
-    metadata.height
+    print("encoding lossless")
     # spatial compression
-    # in a section, save only one color or breightness value if they all match
-    # a section is defined as 3x3 in a grid pattern
+    predictive_frames = []
+    for frame in frames:
+        predictive_frame_y = encode_predictive_compression(frame.y)
+        predictive_frame_cb = encode_predictive_compression(frame.cb)
+        predictive_frame_cr = encode_predictive_compression(frame.cr)
+        predictive_frames.append(SignedFrame(y=predictive_frame_y, cb=predictive_frame_cb, cr=predictive_frame_cr))
 
-    rle_efficiency_test(metadata, frames)
+    print("decoding lossless")
+    frames_2 = []
+    for frame in predictive_frames:
+        y_frame = bytes(decode_predictive_compression(frame.y))
+        cb_frame = bytes(decode_predictive_compression(frame.cb))
+        cr_frame = bytes(decode_predictive_compression(frame.cr))
+        frames_2.append(Frame(y=y_frame, cb=cb_frame, cr=cr_frame))
+    display_frame(metadata, frames_2[0])
 
     # temporal compression
-
-    """Implement lossless coding here."""
-    return pack_lossless_bitstream(metadata, frames)
+    return pack_lossless_bitstream(metadata, predictive_frames)
 
 
 def decode_lossless(bitstream: bytes) -> tuple[Y4MMetadata, list[Frame]]:
-    """Implement lossless decoding here."""
     return unpack_lossless_bitstream(bitstream)
 
 
