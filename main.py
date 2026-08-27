@@ -216,19 +216,30 @@ def unpack_metadata(reader: ByteReader) -> Y4MMetadata:
 # Students edit: yes | purpose: add helper functions for your codec.
 # ============================================================================
 
-def compress_lossless_color(metadata: Y4MMetadata, colors: bytes) -> bytes:
-    section_width = 3
-    section_height = 3
+def rle_efficiency_test(metadata: Y4MMetadata, frames: list[Frame]) -> None:
+    print_metadata(metadata, frames[0])
+    for i in range(20):
+        print(len(run_length_encoding(metadata, frames[i].y)))
+        print(len(run_length_encoding(metadata, frames[i].cb)))
+        print(len(run_length_encoding(metadata, frames[i].cr)))
 
-    for x_section_start in range(0, metadata.width, section_width):
-        for y_section_start in range(0, metadata.height, section_height):
-            x_section_end = min(x_section_start + section_width - 1, metadata.width)
-            y_section_end = min(y_section_start + section_height - 1, metadata.height)
-            # color = colors[metadata.width * y_section_start + x_section_end]
-            for x in range(x_section_start, x_section_end):
-                for y in range(y_section_start, y_section_end):
-                    next_color = colors[metadata.width * y + x]
-                    # if next_color != color:
+
+# does not work here, generates larger sizes
+def run_length_encoding(metadata: Y4MMetadata, colors: bytes) -> list[int]:
+    # Run-Length Encoding (RLE)
+    # Encodes how often a color repeats: amount_of_repetition color_value
+    last_color = colors[0]
+    repetition = 1
+    rle_encoding = []
+    for color in colors:
+        if color == last_color:
+            repetition += 1
+        else:
+            rle_encoding.append(repetition)
+            rle_encoding.append(last_color)
+            repetition = 1
+            last_color = color
+    return rle_encoding
 
 
 def print_metadata(metadata: Y4MMetadata, frame: Frame) -> None:
@@ -368,13 +379,7 @@ def encode_lossless(metadata: Y4MMetadata, frames: list[Frame]) -> bytes:
     # in a section, save only one color or breightness value if they all match
     # a section is defined as 3x3 in a grid pattern
 
-    print_metadata(metadata, frames[0])
-    show_frame(metadata, frames[0])
-
-    for frame in frames:
-        compress_lossless_color(metadata, frame.y)
-        compress_lossless_color(metadata, frame.cb)
-        compress_lossless_color(metadata, frame.cr)
+    rle_efficiency_test(metadata, frames)
 
     # temporal compression
 
