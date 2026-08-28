@@ -222,20 +222,69 @@ class SignedFrame:
     cr: list[int]
 
 
-def encode_predictive_compression(colors: bytes) -> list[int]:
-    compressed_colors = [colors[0]]
-    previous_color = colors[0]
-    for i in range(1, len(colors)):
+def single_color_inter_frame_prediction(current_colors: list[int], next_colors: list[int]) -> list[int]:
+    pixel_amount = len(current_colors)
+    y_temporal_differences = []
+    for pixel_index in range(pixel_amount):
+        temporally_next_pixel = next_colors[pixel_index]
+        current_pixel = current_colors[pixel_index]
+        difference = temporally_next_pixel - current_pixel
+        y_temporal_differences.append(difference)
+    return y_temporal_differences
+
+
+def temporal_predictive_compression(signed_frames: list[SignedFrame]) -> list[SignedFrame]:
+    temporal_compressed_frames = [signed_frames[0]]  # starting frame
+    frames_amount = len(signed_frames)
+    for frame_index in range(frames_amount - 1):
+        y_predictions = single_color_inter_frame_prediction(signed_frames[frame_index].y,
+                                                            signed_frames[frame_index + 1].y)
+        cb_predictions = single_color_inter_frame_prediction(signed_frames[frame_index].cb,
+                                                             signed_frames[frame_index + 1].cb)
+        cr_predictions = single_color_inter_frame_prediction(signed_frames[frame_index].cr,
+                                                             signed_frames[frame_index + 1].cr)
+        temporal_compressed_frames.append(SignedFrame(y=y_predictions, cb=cb_predictions, cr=cr_predictions))
+    return temporal_compressed_frames
+
+
+def decode_single_color_inter_frame_prediction(current_colors: list[int], next_colors: list[int]) -> list[int]:
+    pixel_amount = len(current_colors)
+    y_temporal_differences = []
+    for pixel_index in range(pixel_amount):
+        temporally_next_pixel = next_colors[pixel_index]
+        current_pixel = current_colors[pixel_index]
+        original_value = temporally_next_pixel + current_pixel
+        y_temporal_differences.append(original_value)
+    return y_temporal_differences
+
+
+def decode_temporal_compression(temporal_frames: list[SignedFrame]) -> list[SignedFrame]:
+    last_frame = temporal_frames[0]
+    frames = [last_frame]
+    for frame_index in range(1, len(temporal_frames)):
+        previous_frame = frames[frame_index - 1]
+        current_frame = temporal_frames[frame_index]
+        y_originals = decode_single_color_inter_frame_prediction(previous_frame.y, current_frame.y)
+        cb_originals = decode_single_color_inter_frame_prediction(previous_frame.cb, current_frame.cb)
+        cr_originals = decode_single_color_inter_frame_prediction(previous_frame.cr, current_frame.cr)
+        frames.append(SignedFrame(y=y_originals, cb=cb_originals, cr=cr_originals))
+    return frames
+
+
+def encode_predictive_compression(colors: bytes, starting_color: int) -> list[int]:
+    compressed_colors = [starting_color]
+    previous_color = starting_color
+    for i in range(0, len(colors)):
         difference = colors[i] - previous_color
         previous_color = colors[i]
         compressed_colors.append(difference)
-    return compressed_colors
+    return compressed_colors  # format: starting_value_128 difference_0 difference_1 difference_2 ...
 
 
-def decode_predictive_compression(differences: bytes) -> list[int]:
-    initial_color = differences[0]
-    colors = [initial_color]
-    previous_color = differences[0]
+def decode_predictive_compression(differences: list[int]) -> list[int]:
+    colors = []
+    starting_color = differences[0]
+    previous_color = starting_color
     for i in range(1, len(differences)):
         color = previous_color + differences[i]
         previous_color = color
@@ -252,30 +301,88 @@ def predictive_compression_efficiency_test(metadata: Y4MMetadata, frames: list[F
         print(len(encode_predictive_compression(metadata, frames[i].cr)))
 
 
-def rle_efficiency_test(metadata: Y4MMetadata, frames: list[Frame]) -> None:
-    print_metadata(metadata, frames[0])
-    for i in range(20):
-        print(len(run_length_encoding(metadata, frames[i].y)))
-        print(len(run_length_encoding(metadata, frames[i].cb)))
-        print(len(run_length_encoding(metadata, frames[i].cr)))
+def temporal_run_length_encoding(frames: list[list[int]]) -> list[list[int]]:
+    trle_encoding = []
+    for x in range(1, len(frames[0])):
+        last_color = frames[0][x]
+        repetition = 1
+        trle_encoding_pixel = [frames[0][x]]
+        for frame in frames[1:]:
+            color = frame[x]
+            if color == last_color:
+                repetition += 1
+            else:
+                trle_encoding_pixel.append(repetition)
+                trle_encoding_pixel.append(last_color)
+                repetition = 1
+                last_color = color
+        trle_encoding_pixel.append(repetition)
+        trle_encoding_pixel.append(last_color)
+        trle_encoding.append(trle_encoding_pixel)
+    return trle_encoding
 
 
-# does not work here, generates larger sizes
-def run_length_encoding(metadata: Y4MMetadata, colors: bytes) -> list[int]:
-    # Run-Length Encoding (RLE)
-    # Encodes how often a color repeats: amount_of_repetition color_value
-    last_color = colors[0]
-    repetition = 1
-    rle_encoding = []
-    for color in colors:
-        if color == last_color:
-            repetition += 1
-        else:
-            rle_encoding.append(repetition)
-            rle_encoding.append(last_color)
-            repetition = 1
-            last_color = color
-    return rle_encoding
+def encode_trle(frames: list[SignedFrame]) -> tuple[list[list[int]], list[list[int]], list[list[int]]]:
+    # trle = temporal run-length encoding
+    # Encodes how often a color repeats between frames for each pixel: amount_of_repetition color_value
+    # If two frames have the same SignedFrame Value at the same pixel its written 2 Signed_pixel_value.
+    # Each row in the list hold all signed pixel values for the entire video for a single pixel
+    y_frames = []
+    cb_frames = []
+    cr_frames = []
+    for frame in frames:
+        y_frames.append(frame.y)
+        cb_frames.append(frame.cb)
+        cr_frames.append(frame.cr)
+
+    encoded_y_frames = temporal_run_length_encoding(y_frames)
+    encoded_cb_frames = temporal_run_length_encoding(cb_frames)
+    encoded_cr_frames = temporal_run_length_encoding(cr_frames)
+    print(encoded_y_frames[0])
+    # encoded_y_frames format: list of temporal_pixels each holding amount_0 difference_0 amount_1 difference_1 etc.
+    return encoded_y_frames, encoded_cb_frames, encoded_cr_frames
+
+
+def calc_frame_count(single_pixel_trle: list[int]) -> int:
+    frame_count = 0
+    for i in range(1, len(single_pixel_trle), 2):
+        repetition = single_pixel_trle[i]
+        frame_count += repetition
+    return frame_count
+
+
+def decode_single_trle_color(color_frames: list[list[int]]) -> list[list[int]]:
+    frame_count = calc_frame_count(color_frames[0])
+    frames = []
+    print(color_frames[0])
+    for frame_index in range(frame_count):
+        colors = []
+        starting_color = color_frames[0][frame_index]
+        colors.append(starting_color)
+        for pixel_index in range(1, len(color_frames), 2):
+            repetition = color_frames[pixel_index][frame_index]
+            color = color_frames[pixel_index + 1][frame_index]
+            for _ in range(repetition):
+                colors.append(color)
+            colors.append(color_frames[pixel_index][frame_index])
+        frames.append(colors)
+    return frames
+
+
+def decode_trle(trle: tuple[list[list[int]], list[list[int]], list[list[int]]]) -> list[SignedFrame]:
+    # it has to reconstruct the pixel count fron the amount given
+    y_frames, cb_frames, cr_frames = trle
+
+    frames = []
+    y_colors = decode_single_trle_color(y_frames)
+    cb_colors = decode_single_trle_color(cb_frames)
+    cr_colors = decode_single_trle_color(cr_frames)
+    for frame_index in range(len(y_colors)):
+        y_color = y_colors[frame_index]
+        cb_color = cb_colors[frame_index]
+        cr_color = cr_colors[frame_index]
+        frames.append(SignedFrame(y=y_color, cb=cb_color, cr=cr_color))
+    return frames
 
 
 def print_metadata(metadata: Y4MMetadata, frame: Frame) -> None:
@@ -411,24 +518,40 @@ def unpack_lossy_bitstream(data: bytes) -> tuple[Y4MMetadata, list[Frame]]:
 def encode_lossless(metadata: Y4MMetadata, frames: list[Frame]) -> bytes:
     print("encoding lossless")
     # spatial compression
+    # TODO: same number of entries in array but can be made much smaller with huffman code than original
+    starting_color = 128
     predictive_frames = []
+    # predictive_frames format: list of SignedFrame: SignedFrame has lists for y, cb, cr each habe list:
+    # starting_value difference_0 difference_1 difference_2 etc.
     for frame in frames:
-        predictive_frame_y = encode_predictive_compression(frame.y)
-        predictive_frame_cb = encode_predictive_compression(frame.cb)
-        predictive_frame_cr = encode_predictive_compression(frame.cr)
+        predictive_frame_y = encode_predictive_compression(frame.y, starting_color)
+        predictive_frame_cb = encode_predictive_compression(frame.cb, starting_color)
+        predictive_frame_cr = encode_predictive_compression(frame.cr, starting_color)
         predictive_frames.append(SignedFrame(y=predictive_frame_y, cb=predictive_frame_cb, cr=predictive_frame_cr))
 
+    # trle = encode_trle(predictive_frames)
+
+    temporal_and_spatial_encoded_frames = temporal_predictive_compression(predictive_frames)
+    for i in range(100):
+        print(predictive_frames[1].y[i])
+
     print("decoding lossless")
+    # predictive_frames = decode_trle(trle)
+    # print(len(predictive_frames))
+    spatial_encoded_frames = decode_temporal_compression(temporal_and_spatial_encoded_frames)
+
     frames_2 = []
-    for frame in predictive_frames:
+    for frame in spatial_encoded_frames:
         y_frame = bytes(decode_predictive_compression(frame.y))
         cb_frame = bytes(decode_predictive_compression(frame.cb))
         cr_frame = bytes(decode_predictive_compression(frame.cr))
         frames_2.append(Frame(y=y_frame, cb=cb_frame, cr=cr_frame))
     display_frame(metadata, frames_2[0])
-
     # temporal compression
-    return pack_lossless_bitstream(metadata, predictive_frames)
+    # temporal run length compression
+    # 1 line in array holds all values of all frames for specific pixel using format repition color
+
+    return pack_lossless_bitstream(metadata, frames_2)
 
 
 def decode_lossless(bitstream: bytes) -> tuple[Y4MMetadata, list[Frame]]:
