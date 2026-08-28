@@ -517,8 +517,7 @@ def unpack_lossy_bitstream(data: bytes) -> tuple[Y4MMetadata, list[Frame]]:
 
 def encode_lossless(metadata: Y4MMetadata, frames: list[Frame]) -> bytes:
     print("encoding lossless")
-    # spatial compression
-    # TODO: same number of entries in array but can be made much smaller with huffman code than original
+    # ---encoding spatial compression---
     starting_color = 128
     predictive_frames = []
     # predictive_frames format: list of SignedFrame: SignedFrame has lists for y, cb, cr each habe list:
@@ -529,27 +528,24 @@ def encode_lossless(metadata: Y4MMetadata, frames: list[Frame]) -> bytes:
         predictive_frame_cr = encode_predictive_compression(frame.cr, starting_color)
         predictive_frames.append(SignedFrame(y=predictive_frame_y, cb=predictive_frame_cb, cr=predictive_frame_cr))
 
-    # trle = encode_trle(predictive_frames)
-
+    # ---encoding temporal compression---
     temporal_and_spatial_encoded_frames = temporal_predictive_compression(predictive_frames)
     for i in range(100):
         print(predictive_frames[1].y[i])
 
     print("decoding lossless")
-    # predictive_frames = decode_trle(trle)
-    # print(len(predictive_frames))
+    # ---decoding temporal compression---
     spatial_encoded_frames = decode_temporal_compression(temporal_and_spatial_encoded_frames)
 
+    # ---decoding spatial compression---
     frames_2 = []
     for frame in spatial_encoded_frames:
         y_frame = bytes(decode_predictive_compression(frame.y))
         cb_frame = bytes(decode_predictive_compression(frame.cb))
         cr_frame = bytes(decode_predictive_compression(frame.cr))
         frames_2.append(Frame(y=y_frame, cb=cb_frame, cr=cr_frame))
-    display_frame(metadata, frames_2[0])
-    # temporal compression
-    # temporal run length compression
-    # 1 line in array holds all values of all frames for specific pixel using format repition color
+
+    display_frame(metadata, frames_2[100])
 
     return pack_lossless_bitstream(metadata, frames_2)
 
