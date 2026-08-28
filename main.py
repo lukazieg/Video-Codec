@@ -385,6 +385,21 @@ def decode_trle(trle: tuple[list[list[int]], list[list[int]], list[list[int]]]) 
     return frames
 
 
+def interpolate_frames(colors: list[list[int]]) -> list[int]:
+    interpolated_monochrom_frames = []
+    for frame_index in range(1, len(colors)):
+        last_colors = colors[frame_index - 1]
+        current_colors = colors[frame_index]
+        interpolated_colors = []
+        for pixel_index in range(len(current_colors)):
+            current_pixel = current_colors[pixel_index]
+            last_pixel = last_colors[pixel_index]
+            pixel_interpolation = (current_pixel + last_pixel) // 2
+            interpolated_colors.append(pixel_interpolation)
+        interpolated_monochrom_frames.append(interpolated_colors)
+    return interpolated_monochrom_frames
+
+
 def print_metadata(metadata: Y4MMetadata, frame: Frame) -> None:
     print("width: " + str(metadata.width))
     print("height: " + str(metadata.height))
@@ -530,8 +545,8 @@ def encode_lossless(metadata: Y4MMetadata, frames: list[Frame]) -> bytes:
 
     # ---encoding temporal compression---
     temporal_and_spatial_encoded_frames = temporal_predictive_compression(predictive_frames)
-    for i in range(100):
-        print(predictive_frames[1].y[i])
+    # for i in range(100):
+    #    print(predictive_frames[1].y[i])
 
     print("decoding lossless")
     # ---decoding temporal compression---
@@ -555,8 +570,39 @@ def decode_lossless(bitstream: bytes) -> tuple[Y4MMetadata, list[Frame]]:
 
 
 def encode_lossy(metadata: Y4MMetadata, frames: list[Frame]) -> bytes:
-    """Implement lossy coding here."""
-    return pack_lossy_bitstream(metadata, frames)
+    print("encoding lossless")
+    # ---encoding temporal compression---
+    reduced_frames = []
+    for frame_index in range(0, len(frames), 2):
+        reduced_frames.append(frames[frame_index])
+
+    print("decoding lossless")
+    # ---decoding temporal compression---
+    # generating frames
+    y_colors = []
+    cb_colors = []
+    cr_colors = []
+    for frame in reduced_frames:
+        y_colors.append(frame.y)
+        cb_colors.append(frame.cb)
+        cr_colors.append(frame.cr)
+
+    y_colors_interpolated = interpolate_frames(y_colors)
+    cb_colors_interpolated = interpolate_frames(cb_colors)
+    cr_colors_interpolated = interpolate_frames(cr_colors)
+
+    interpolated_frames = []
+    for i in range(len(reduced_frames)):
+        interpolated_frames.append(reduced_frames[i])
+        if i < len(y_colors_interpolated):
+            frame = Frame(y=bytes(y_colors_interpolated[i]), cb=bytes(cb_colors_interpolated[i]),
+                          cr=bytes(cr_colors_interpolated[i]))
+            interpolated_frames.append(frame)
+
+    # there may be one less interpolated frame so to get to the full frame count one extra frame needs to be added.
+    interpolated_frames.append(reduced_frames[-1])
+
+    return pack_lossy_bitstream(metadata, interpolated_frames)
 
 
 def decode_lossy(bitstream: bytes) -> tuple[Y4MMetadata, list[Frame]]:
@@ -595,7 +641,7 @@ def main() -> None:
 
     metadata, frames = read_y4m(SOURCE_FILE)
 
-    run_lossless_pipeline(metadata, frames)
+    # run_lossless_pipeline(metadata, frames)
     run_lossy_pipeline(metadata, frames)
 
     print("Finished.")
