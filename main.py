@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from asyncio.windows_events import NULL
 from dataclasses import dataclass
 from pathlib import Path
@@ -236,7 +237,7 @@ def single_color_inter_frame_prediction(current_colors: list[int], next_colors: 
 def temporal_predictive_compression(signed_frames: list[SignedFrame]) -> list[SignedFrame]:
     temporal_compressed_frames = [signed_frames[0]]  # starting frame
     frames_amount = len(signed_frames)
-    for frame_index in range(frames_amount - 1):
+    for frame_index in tqdm(range(frames_amount - 1), total=frames_amount, initial=1, file=sys.stdout):
         y_predictions = single_color_inter_frame_prediction(signed_frames[frame_index].y,
                                                             signed_frames[frame_index + 1].y)
         cb_predictions = single_color_inter_frame_prediction(signed_frames[frame_index].cb,
@@ -261,7 +262,7 @@ def decode_single_color_inter_frame_prediction(current_colors: list[int], next_c
 def decode_temporal_compression(temporal_frames: list[SignedFrame]) -> list[SignedFrame]:
     last_frame = temporal_frames[0]
     frames = [last_frame]
-    for frame_index in range(1, len(temporal_frames)):
+    for frame_index in tqdm(range(1, len(temporal_frames)), total=len(temporal_frames), initial=1, file=sys.stdout):
         previous_frame = frames[frame_index - 1]
         current_frame = temporal_frames[frame_index]
         y_originals = decode_single_color_inter_frame_prediction(previous_frame.y, current_frame.y)
@@ -387,7 +388,7 @@ def decode_trle(trle: tuple[list[list[int]], list[list[int]], list[list[int]]]) 
 
 def interpolate_frames(colors: list[list[int]]) -> list[int]:
     interpolated_monochrom_frames = []
-    for frame_index in range(1, len(colors)):
+    for frame_index in tqdm(range(1, len(colors)), file=sys.stdout):
         last_colors = colors[frame_index - 1]
         current_colors = colors[frame_index]
         interpolated_colors = []
@@ -537,24 +538,28 @@ def encode_lossless(metadata: Y4MMetadata, frames: list[Frame]) -> bytes:
     predictive_frames = []
     # predictive_frames format: list of SignedFrame: SignedFrame has lists for y, cb, cr each habe list:
     # starting_value difference_0 difference_1 difference_2 etc.
-    for frame in frames:
+    print("spatial compression", flush=True)
+    for frame in tqdm(frames, file=sys.stdout):
         predictive_frame_y = encode_predictive_compression(frame.y, starting_color)
         predictive_frame_cb = encode_predictive_compression(frame.cb, starting_color)
         predictive_frame_cr = encode_predictive_compression(frame.cr, starting_color)
         predictive_frames.append(SignedFrame(y=predictive_frame_y, cb=predictive_frame_cb, cr=predictive_frame_cr))
 
     # ---encoding temporal compression---
+    print("temporal compression", flush=True)
     temporal_and_spatial_encoded_frames = temporal_predictive_compression(predictive_frames)
     # for i in range(100):
     #    print(predictive_frames[1].y[i])
 
     print("decoding lossless")
     # ---decoding temporal compression---
+    print("temporal decompression", flush=True)
     spatial_encoded_frames = decode_temporal_compression(temporal_and_spatial_encoded_frames)
 
     # ---decoding spatial compression---
+    print("spatial decompression", flush=True)
     frames_2 = []
-    for frame in spatial_encoded_frames:
+    for frame in tqdm(spatial_encoded_frames, file=sys.stdout):
         y_frame = bytes(decode_predictive_compression(frame.y))
         cb_frame = bytes(decode_predictive_compression(frame.cb))
         cr_frame = bytes(decode_predictive_compression(frame.cr))
@@ -570,13 +575,15 @@ def decode_lossless(bitstream: bytes) -> tuple[Y4MMetadata, list[Frame]]:
 
 
 def encode_lossy(metadata: Y4MMetadata, frames: list[Frame]) -> bytes:
-    print("encoding lossless")
+    print("encoding lossy")
     # ---encoding temporal compression---
+    print("temporal compression", flush=True)
     reduced_frames = []
-    for frame_index in range(0, len(frames), 2):
+    for frame_index in tqdm(range(0, len(frames), 2), file=sys.stdout):
         reduced_frames.append(frames[frame_index])
 
-    print("decoding lossless")
+    print("decoding lossy")
+    print("temporal decompression", flush=True)
     # ---decoding temporal compression---
     # generating frames
     y_colors = []
@@ -592,7 +599,7 @@ def encode_lossy(metadata: Y4MMetadata, frames: list[Frame]) -> bytes:
     cr_colors_interpolated = interpolate_frames(cr_colors)
 
     interpolated_frames = []
-    for i in range(len(reduced_frames)):
+    for i in tqdm(range(len(reduced_frames)), file=sys.stdout):
         interpolated_frames.append(reduced_frames[i])
         if i < len(y_colors_interpolated):
             frame = Frame(y=bytes(y_colors_interpolated[i]), cb=bytes(cb_colors_interpolated[i]),
@@ -641,7 +648,7 @@ def main() -> None:
 
     metadata, frames = read_y4m(SOURCE_FILE)
 
-    # run_lossless_pipeline(metadata, frames)
+    run_lossless_pipeline(metadata, frames)
     run_lossy_pipeline(metadata, frames)
 
     print("Finished.")
