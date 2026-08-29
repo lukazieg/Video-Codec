@@ -2,20 +2,49 @@
 
 **Course:** Multimedia-Kommunikation (AI1033)
 **Term:** Summer Semester 2026
-**Group:** [Gruppennummer]
-**Members:** [Name 1], [Name 2], [Name 3], [Name 4]
+**Group:** 1
+**Members:** Simon Merz, Jonas Pieper, Lukas Ziegler
 
 ------
 
 ## 1. Architecture
-
+### 1.0 Magic Number
+- The magic number is at the top of the Container. It is used to determine whether the container is Lossy (LY01) or Lossless (LS01)
+ 
 ### 1.1 File Header
-
 [Beschreibt hier den Aufbau eures Dateikopfs. Welche Metadaten speichert ihr (z. B. Auflösung, Framerate, Modus) und wie viele Bytes belegt jedes Feld?]
+- The file header is the same for Lossy and Lossless. It contains following information:
+  | Field | Bytes | Description |
+  | -------- | -------- | -------- |
+  | width | 4 | Width of the video in pixels |
+  | height | 4 | Height of the video in pixels |
+  | fps | 4 + N | Framerate of the video |
+  | interlacing | 4 + N | Determines if the frames are complete frames, halved frames or a mixture of both |
+  | aspect_ratio | 4 + N | Ratio of width and height of each pixel (1:1 square) |
+  | chroma | 4 + N | Determines the ratio between color and brightness (420jpeg is the only supported chroma in this pipeline) |
+  
+  (4 + N): The first 4 bytes store a number that tells you how many bytes follow (N). Those N bytes then contain the actual field value (as ASCII text).
 
 ### 1.2 Frame Organization & Payload
-
 [Wie sind die eigentlichen Bilddaten nach dem Header sortiert? Wie unterscheidet ihr zwischen Keyframes und Differenz-Frames? Skizziert hier kurz den Aufbau eures Bitstreams.]
+- This part of the bitstream differs between Lossless and Lossy. 
+#### 1.2.1 Lossless
+| Field | Bytes | Description |
+| -------- | -------- | -------- |
+| Huffman-Table | 4 + N * (4 + 1 + M) | Number of entries followed by N entries (each entry: i32 value + code length + Huffman Code) |
+| #Frames | 4 | Number of frames |
+| Length of image plane | #Frames * 12 | per frame: y_len, cb_len, cr_len |
+| Payload length | 4 | Length of following payload |
+| Payload | varies | Contains a huffman-encoded bitstream with all values of Y, Cb and Cr for each frame |
+
+- Only the first frame of the Payload is an I-Frame, every other one is a P-Frame. This is not visible in the bitstream, instead it is hard coded in the encoding and decoding logic.
+  The following 2 functions are responsible for this: temporal_predictive_compression, decode_temporal_compression.
+
+#### 1.2.2 Lossy
+| Field | Bytes | Description |
+| -------- | -------- | -------- |
+| #Frames | 4 | Number of frames |
+| per Frame, per Plane (Y, Cb, Cr) | 4 + N | Plane length + N bytes |
 
 ------
 
