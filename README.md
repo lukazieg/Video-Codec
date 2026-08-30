@@ -44,7 +44,10 @@
 | Field | Bytes | Description |
 | -------- | -------- | -------- |
 | #Frames | 4 | Number of frames |
-| per Frame, per Plane (Y, Cb, Cr) | 4 + N | Plane length + N bytes |
+| Levels | 4 | Number of quantization levels |
+| Length of image plane | #Frames * 12 | per frame: y_len, cb_len, cr_len |
+| Payload length | 4 | Length of following payload in bytes |
+| Payload | varies | Quantized values for all Y, Cb and Cr values of each frame |
 
 ------
 
@@ -65,11 +68,14 @@
 ### 2.2 Lossy Mode
 
 - **Spatial Compression (Intra-frame):** [Wo spart ihr hier massiv Daten ein? (z. B. Farbraum-Reduktion, Quantisierung oder Downsampling)]
-  -
+   - Lossy Spatial Compression uses quantization, this means that each 8-bit pixel value (0-255) is mapped into one of 64 buckets (value // step, step = 256 // levels).
+    This reduces the number of possible pixel values from 256 (8-bit) to 64 (6-bit) which in turn saves storage space. 
+    When decoding each bucket is approximated by its middle value (quantized * step + step // 2), which minimizes rounding errors. 
 
 - **Temporal Compression (Inter-frame):** [Wie geht ihr mit Bewegungen oder Änderungen zwischen Frames um, wenn Perfektion nicht das Ziel ist?]
-  - Lossy Temporal Compression deletes every second frame during encoding. Then the missing frames get reconstructed, by averaging the previous and next pixel value for each pixel in the frame.
-  - ***(current pixel + last pixel) // 2*** The result is always a Integer. 
+  - Lossy Temporal Compression deletes every second frame during encoding, the remaining frames get packed into the bitstream. 
+    During decoding the missing frames are reconstructed, using the averages of the previous and next frame for each pixel (current_pixel + last_pixel) // 2.
+    Since the last frame doesn't have a next frame, the second to last frame gets duplicated and put into that spot. 
 ------
 
 ## 3. Evaluation
