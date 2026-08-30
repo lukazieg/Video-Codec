@@ -52,21 +52,24 @@
 
 ### 2.1 Lossless Mode
 - **Spatial Compression (Intra-frame):** [Welches Verfahren nutzt ihr innerhalb eines Bildes, um keine Informationen zu verlieren? (z. B. Vorhersage-Modelle oder verlustfreies RLE)]
- - The method used to achieve LosslessSC is Differential Pulse-Code Modulation. This means instead of storing all data for every pixel, only the difference to the previous pixel gets saved.
+  - The method used to achieve LosslessSC is Differential Pulse-Code Modulation. This means instead of storing all data for every pixel, only the difference to the previous pixel gets saved.
    This works well because neighbouring pixels in a picture are often similar which leads to small differential values.
    The values get stored in a 1D-Array with a set startvalue of 128 ([128, value1, value2,...]). This is done for each Plane, each with its own array.
    This method works well for Lossless Mode because its perfectly reversible by adding all the differences back together. 
    
 - **Temporal Compression (Inter-frame):** [Wie nutzt ihr die Ähnlichkeit zwischen aufeinanderfolgenden Bildern aus, ohne Bit-Fehler zu riskieren?]
- - Lossless Temporal Compression stores the first frame completely, after that it only saves the differences for every pixel to the same pixel on the previous frame. 
+  - Lossless Temporal Compression stores the first frame completely, after that it only saves the differences for every pixel to the same pixel on the previous frame. 
    This achieves compression because you store smaller numbers. 
    To avoid bit-errors this is a purely integer operation with no rounding involved. It also makes the compression perfectly reversible so no data gets lost.
 
 ### 2.2 Lossy Mode
 
 - **Spatial Compression (Intra-frame):** [Wo spart ihr hier massiv Daten ein? (z. B. Farbraum-Reduktion, Quantisierung oder Downsampling)]
-- **Temporal Compression (Inter-frame):** [Wie geht ihr mit Bewegungen oder Änderungen zwischen Frames um, wenn Perfektion nicht das Ziel ist?]
+  -
 
+- **Temporal Compression (Inter-frame):** [Wie geht ihr mit Bewegungen oder Änderungen zwischen Frames um, wenn Perfektion nicht das Ziel ist?]
+  - Lossy Temporal Compression deletes every second frame during encoding. Then the missing frames get reconstructed, by averaging the previous and next pixel value for each pixel in the frame.
+  - ***(current pixel + last pixel) // 2*** The result is always a Integer. 
 ------
 
 ## 3. Evaluation
