@@ -30,6 +30,6 @@ geprüft, verifiziert und überarbeitet.
 
 | Werkzeug             | Aufgabe / Funktion      | Art der Unterstützung                                                                               |
 |:---------------------|:------------------------|:----------------------------------------------------------------------------------------------------|
-| **ChatGPT 5.6 Luna** | **Bilddarstellung**     | Genaueres erklären von YCbCr und Beispielcode für Pillow Bibliothek zur Bildanzeige bereitgestellt. |
-| **ChatGPT 5.6 Luna** | **Encoding / Decoding** | Fragen zu Python Syntax beantwortet.                                                                |
-| ****                 | ****                    |                                                                                                     |
+| **Claude Sonnet 5** | **Verständnis** | Detaillierte Beschreibung des Ablaufes und der Aufgabenstellung. |
+| **Claude Sonnet 5** | **Grundgerüst** | Erstellung eines skizzierten Grundgerüstes des Systems. |
+| **Claude Sonnet 5** | **Kommentare** | Hilfe beim kommentieren des Codes. |
