@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import sys
-from asyncio.windows_events import NULL
 from dataclasses import dataclass
 from pathlib import Path
 import struct
-import warnings
 
 from tqdm import tqdm
 from PIL import Image
@@ -428,8 +426,12 @@ def display_frame(metadata: Y4MMetadata, frame: Frame) -> None:
     image = Image.merge("YCbCr", (y_image, cb_image, cr_image))
     image.show()
 
+
 class BitWriter:
-    """Collects individual bits and packs them into full bytes."""
+    """Collects individual bits (given as '0'/'1' strings) and packs them into
+    full bytes. Needed because Huffman codes and quantized values have
+    variable/non-byte-aligned bit lengths, unlike append_u32 which always
+    writes whole bytes."""
 
     def __init__(self) -> None:
         self.buffer = bytearray()
@@ -446,6 +448,7 @@ class BitWriter:
                 self.bits_filled = 0
 
     def flush(self) -> bytes:
+        # Pad the final, not-yet-full byte with zero bits so it can be written out.
         if self.bits_filled > 0:
             self.current_byte <<= (8 - self.bits_filled)
             self.buffer.append(self.current_byte)
@@ -454,7 +457,8 @@ class BitWriter:
 
 
 class BitReader:
-    """Reads individual bits back out of a byte sequence."""
+    """Reads individual bits back out of a byte sequence, MSB first, matching
+    the order BitWriter wrote them in."""
 
     def __init__(self, data: bytes) -> None:
         self.data = data
@@ -472,6 +476,7 @@ class BitReader:
 
 
 def append_i32(buffer: bytearray, value: int) -> None:
+    # Signed 32-bit little-endian, unlike append_u32: residual values can be negative.
     buffer.extend(struct.pack("<i", value))
 
 
@@ -480,6 +485,10 @@ def read_i32(reader: ByteReader) -> int:
 
 
 # ---- Huffman tree construction ----
+# Huffman coding assigns short bit-codes to frequent values and long bit-codes
+# to rare ones, so the total number of bits needed to store a stream of
+# values shrinks whenever the value distribution is skewed (as it is for our
+# residuals, which cluster tightly around zero).
 
 class HuffmanNode:
     def __init__(self, value: int | None = None, left: HuffmanNode | None = None,
@@ -494,6 +503,7 @@ class HuffmanNode:
 
 
 def build_frequency_table(values: list[int]) -> dict[int, int]:
+    """Counts how often each distinct value occurs in the input list."""
     frequency: dict[int, int] = {}
     for value in values:
         frequency[value] = frequency.get(value, 0) + 1
@@ -501,6 +511,10 @@ def build_frequency_table(values: list[int]) -> dict[int, int]:
 
 
 def build_huffman_tree(frequency: dict[int, int]) -> HuffmanNode:
+    """Builds the Huffman tree bottom-up: repeatedly merges the two least
+    frequent nodes into a new parent node until only the root remains. Values
+    merged early end up deep in the tree, which is what makes rare values get
+    long codes and frequent values get short codes."""
     nodes = [(freq, HuffmanNode(value=value)) for value, freq in frequency.items()]
 
     if len(nodes) == 1:
@@ -517,6 +531,8 @@ def build_huffman_tree(frequency: dict[int, int]) -> HuffmanNode:
 
 
 def build_code_table(tree: HuffmanNode) -> dict[int, str]:
+    """Walks the tree to read off each value's bit-code: '0' for every left
+    turn, '1' for every right turn."""
     codes: dict[int, str] = {}
 
     def walk(node: HuffmanNode, path: str) -> None:
@@ -531,12 +547,19 @@ def build_code_table(tree: HuffmanNode) -> dict[int, str]:
 
 
 # ---- Packing / unpacking the code table itself ----
+# The Huffman code table is not fixed in advance; it depends on the actual
+# residual values in this video. The decoder therefore has no way to rebuild
+# it on its own, so it has to be written into the bitstream alongside the
+# compressed data.
 
 def pack_huffman_table(buffer: bytearray, codes: dict[int, str]) -> None:
     append_u32(buffer, len(codes))
     for value, bitstring in codes.items():
         append_i32(buffer, value)
         buffer.append(len(bitstring))
+        # Each table entry is byte-aligned on its own for simplicity; the
+        # table is tiny compared to the frame data, so the few wasted
+        # padding bits per entry don't matter.
         table_writer = BitWriter()
         table_writer.write_bits(bitstring)
         buffer.extend(table_writer.flush())
@@ -555,9 +578,9 @@ def unpack_huffman_table(reader: ByteReader) -> dict[str, int]:
         bitstring = ""
         for byte in packed:
             bitstring += format(byte, "08b")
-        bitstring = bitstring[:code_length]
+        bitstring = bitstring[:code_length]  # drop the padding bits added by flush()
 
-        reversed_codes[bitstring] = value
+        reversed_codes[bitstring] = value  # inverted: bitstring -> value, needed for decoding
 
     return reversed_codes
 
@@ -566,103 +589,105 @@ def unpack_huffman_table(reader: ByteReader) -> dict[str, int]:
 
 def huffman_encode_values(values: list[int], codes: dict[int, str]) -> bytes:
     writer = BitWriter()
-    for value in values:
+    for value in tqdm(values, desc="huffman encoding", file=sys.stdout):
         writer.write_bits(codes[value])
     return writer.flush()
 
 
 def huffman_decode_values(encoded_data: bytes, reversed_codes: dict[str, int], value_count: int) -> list[int]:
+    # Huffman codes are prefix-free, so reading bit by bit and checking after
+    # every bit whether the accumulated path is a known code is unambiguous.
     reader = BitReader(encoded_data)
     values: list[int] = []
     current_path = ""
 
+    progress = tqdm(total=value_count, desc="huffman decoding", file=sys.stdout)
     while len(values) < value_count:
         current_path += str(reader.read_bit())
         if current_path in reversed_codes:
             values.append(reversed_codes[current_path])
             current_path = ""
+            progress.update(1)
+    progress.close()
 
     return values
 
 
+def quantize_color(value: int, levels: int = 64) -> int:
+    """Lossy spatial compression: maps an 8-bit color value (0-255) onto a
+    smaller number of quantization levels by dividing it into fixed-size
+    buckets. Fewer distinct values means the bitstream needs fewer bits per
+    pixel later on, at the cost of losing fine color detail."""
+    step = 256 // levels  # bucket width, e.g. 4 for 64 levels
+    quantized = value // step
+    return min(quantized, levels - 1)  # guard against the top bucket overflowing
 
 
-# ============================================================================
-# Testing
-# Students edit: yes | purpose: verify encode -> pack -> unpack -> decode roundtrip.
-# ============================================================================
+def dequantize_color(quantized: int, levels: int = 64) -> int:
+    """Reverses quantize_color as far as possible. The exact original value
+    inside a bucket is lost, so we approximate it with the bucket's midpoint,
+    which minimizes the average rounding error compared to always returning
+    the bucket's lower edge."""
+    step = 256 // levels
+    value = quantized * step + step // 2
+    return min(value, 255)
 
-def test_lossless_roundtrip(metadata: Y4MMetadata, frames: list[Frame]) -> bool:
-    """Runs the full lossless pipeline (encode -> pack -> unpack -> decode)
-    and checks whether every frame is reconstructed byte-for-byte identical
-    to the original. Prints a report to the console."""
-    print("\n=== LOSSLESS ROUNDTRIP TEST ===")
 
-    starting_color = 128
+def quantize_plane(plane: bytes, levels: int = 64) -> bytes:
+    """Applies quantize_color to every pixel of a single plane (Y, Cb or Cr)."""
+    return bytes(quantize_color(v, levels) for v in plane)
 
-    # -- spatial encode --
-    predictive_frames: list[SignedFrame] = []
-    for frame in frames:
-        predictive_frames.append(SignedFrame(
-            y=encode_predictive_compression(frame.y, starting_color),
-            cb=encode_predictive_compression(frame.cb, starting_color),
-            cr=encode_predictive_compression(frame.cr, starting_color),
-        ))
 
-    # -- temporal encode --
-    temporal_frames = temporal_predictive_compression(predictive_frames)
+def dequantize_plane(plane: bytes, levels: int = 64) -> bytes:
+    """Applies dequantize_color to every pixel of a single plane."""
+    return bytes(dequantize_color(v, levels) for v in plane)
 
-    # -- pack --
-    bitstream = pack_lossless_bitstream(metadata, temporal_frames)
 
-    original_size = sum(len(f.y) + len(f.cb) + len(f.cr) for f in frames)
-    compressed_size = len(bitstream)
-    ratio = original_size / compressed_size if compressed_size else float("inf")
-    print(f"Original size:      {original_size} bytes")
-    print(f"Compressed size:    {compressed_size} bytes")
-    print(f"Compression ratio:  {ratio:.2f}:1")
+def quantize_frame(frame: Frame, levels: int = 64) -> Frame:
+    """Quantizes all three planes of a frame."""
+    return Frame(
+        y=quantize_plane(frame.y, levels),
+        cb=quantize_plane(frame.cb, levels),
+        cr=quantize_plane(frame.cr, levels),
+    )
 
-    # -- unpack --
-    unpacked_metadata, unpacked_temporal_frames = unpack_lossless_bitstream(bitstream)
 
-    # -- sanity check: residuals must survive pack/unpack unchanged --
-    residuals_ok = True
-    for index, (original, restored) in enumerate(zip(temporal_frames, unpacked_temporal_frames)):
-        if original.y != restored.y or original.cb != restored.cb or original.cr != restored.cr:
-            residuals_ok = False
-            print(f"  -> Residual mismatch after pack/unpack at frame {index}")
-    print(f"Residuals survive pack/unpack: {'OK' if residuals_ok else 'FAILED'}")
+def dequantize_frame(frame: Frame, levels: int = 64) -> Frame:
+    """Dequantizes all three planes of a frame."""
+    return Frame(
+        y=dequantize_plane(frame.y, levels),
+        cb=dequantize_plane(frame.cb, levels),
+        cr=dequantize_plane(frame.cr, levels),
+    )
 
-    # -- temporal decode --
-    spatial_frames = decode_temporal_compression(unpacked_temporal_frames)
 
-    # -- spatial decode --
-    reconstructed_frames: list[Frame] = []
-    for frame in spatial_frames:
-        y = bytes(decode_predictive_compression(frame.y))
-        cb = bytes(decode_predictive_compression(frame.cb))
-        cr = bytes(decode_predictive_compression(frame.cr))
-        reconstructed_frames.append(Frame(y=y, cb=cb, cr=cr))
+def lossy_temporal_reduce(frames: list[Frame]) -> list[Frame]:
+    """Lossy temporal compression: keeps only every second frame."""
+    return [frames[i] for i in range(0, len(frames), 2)]
 
-    # -- final check: reconstructed frames must equal original frames exactly --
-    all_ok = True
-    for index, (original, reconstructed) in enumerate(zip(frames, reconstructed_frames)):
-        if original.y != reconstructed.y:
-            all_ok = False
-            print(f"  -> Y plane mismatch at frame {index}")
-        if original.cb != reconstructed.cb:
-            all_ok = False
-            print(f"  -> Cb plane mismatch at frame {index}")
-        if original.cr != reconstructed.cr:
-            all_ok = False
-            print(f"  -> Cr plane mismatch at frame {index}")
 
-    if all_ok and residuals_ok:
-        print("RESULT: LOSSLESS ROUNDTRIP TEST PASSED\n")
-    else:
-        print("RESULT: LOSSLESS ROUNDTRIP TEST FAILED\n")
+def lossy_temporal_interpolate(reduced_frames: list[Frame]) -> list[Frame]:
+    """Reconstructs the dropped frames by averaging each kept frame with the
+    next one, filling the gaps back in so the video regains its original
+    frame count (at reduced motion quality)."""
+    y_colors = [f.y for f in reduced_frames]
+    cb_colors = [f.cb for f in reduced_frames]
+    cr_colors = [f.cr for f in reduced_frames]
 
-    return all_ok and residuals_ok
+    y_interp = interpolate_frames(y_colors)
+    cb_interp = interpolate_frames(cb_colors)
+    cr_interp = interpolate_frames(cr_colors)
+
+    interpolated_frames = []
+    for i in range(len(reduced_frames)):
+        interpolated_frames.append(reduced_frames[i])
+        if i < len(y_interp):
+            interpolated_frames.append(Frame(
+                y=bytes(y_interp[i]), cb=bytes(cb_interp[i]), cr=bytes(cr_interp[i])
+            ))
+    interpolated_frames.append(reduced_frames[-1])
+    return interpolated_frames
+
 
 # ============================================================================
 # Student bitstream
@@ -670,13 +695,31 @@ def test_lossless_roundtrip(metadata: Y4MMetadata, frames: list[Frame]) -> bool:
 # ============================================================================
 
 def pack_lossless_bitstream(metadata: Y4MMetadata, signed_frames: list[SignedFrame]) -> bytes:
-    """Pack residual frames into a Huffman-compressed container."""
+    """Packs residual frames (spatial + temporal prediction already applied)
+    into a Huffman-compressed container.
+
+    Layout:
+      "LS01"                       4 bytes, magic / format version
+      metadata                     width, height, fps, interlacing, aspect, chroma
+      huffman table                shared code table for every residual value in the video
+      frame_count                  u32
+      per frame: y_len, cb_len, cr_len   3x u32, so the decoder knows where
+                                          each frame's planes end inside the
+                                          single flat value stream below
+      encoded_length                u32
+      encoded_data                  the Huffman-coded bits for ALL residuals
+                                     of the whole video, back to back
+    """
     output = bytearray()
     output.extend(b"LS01")
     pack_metadata(output, metadata)
 
+    # Flatten every residual across every frame/plane so a single, shared
+    # code table can be built for the whole video (one table is simpler and
+    # cheaper to store than one table per frame).
+    print("packing lossless", flush=True)
     all_values: list[int] = []
-    for frame in signed_frames:
+    for frame in tqdm(signed_frames, desc="collecting residuals", file=sys.stdout):
         all_values.extend(frame.y)
         all_values.extend(frame.cb)
         all_values.extend(frame.cr)
@@ -686,8 +729,10 @@ def pack_lossless_bitstream(metadata: Y4MMetadata, signed_frames: list[SignedFra
     codes = build_code_table(tree)
     pack_huffman_table(output, codes)
 
+    # Store how long each plane is so the decoder can later cut the single
+    # decoded value stream back into the correct per-frame/per-plane pieces.
     append_u32(output, len(signed_frames))
-    for frame in signed_frames:
+    for frame in tqdm(signed_frames, desc="writing frame lengths", file=sys.stdout):
         append_u32(output, len(frame.y))
         append_u32(output, len(frame.cb))
         append_u32(output, len(frame.cr))
@@ -700,7 +745,9 @@ def pack_lossless_bitstream(metadata: Y4MMetadata, signed_frames: list[SignedFra
 
 
 def unpack_lossless_bitstream(data: bytes) -> tuple[Y4MMetadata, list[SignedFrame]]:
-    """Unpack a Huffman-compressed lossless container back into residual frames."""
+    """Reverses pack_lossless_bitstream: reads the container back into
+    residual frames (decode_lossless then still needs to undo temporal and
+    spatial prediction to turn these into real pixel data)."""
     reader = ByteReader(data)
 
     magic = reader.read_bytes(4)
@@ -712,7 +759,8 @@ def unpack_lossless_bitstream(data: bytes) -> tuple[Y4MMetadata, list[SignedFram
 
     frame_count = reader.read_u32()
     plane_lengths: list[tuple[int, int, int]] = []
-    for _ in range(frame_count):
+    print("unpacking lossless", flush=True)
+    for _ in tqdm(range(frame_count), desc="reading frame lengths", file=sys.stdout):
         y_len = reader.read_u32()
         cb_len = reader.read_u32()
         cr_len = reader.read_u32()
@@ -724,9 +772,11 @@ def unpack_lossless_bitstream(data: bytes) -> tuple[Y4MMetadata, list[SignedFram
     total_values = sum(sum(lengths) for lengths in plane_lengths)
     all_values = huffman_decode_values(encoded_data, reversed_codes, total_values)
 
+    # Cut the single flat value stream back into per-frame/per-plane chunks,
+    # using the lengths stored above, in the same order they were written.
     signed_frames: list[SignedFrame] = []
     position = 0
-    for y_len, cb_len, cr_len in plane_lengths:
+    for y_len, cb_len, cr_len in tqdm(plane_lengths, desc="rebuilding frames", file=sys.stdout):
         y = all_values[position:position + y_len]
         position += y_len
         cb = all_values[position:position + cb_len]
@@ -738,38 +788,78 @@ def unpack_lossless_bitstream(data: bytes) -> tuple[Y4MMetadata, list[SignedFram
     return metadata, signed_frames
 
 
+def pack_lossy_bitstream(metadata: Y4MMetadata, frames: list[Frame], levels: int = 64) -> bytes:
+    """Packs already-quantized frames into a bit-packed container. Since
+    every quantized value is guaranteed to be in [0, levels), each value only
+    needs as many bits as required to represent (levels - 1), instead of a
+    full byte per pixel.
 
-def pack_lossy_bitstream(metadata: Y4MMetadata, frames: list[Frame]) -> bytes:
-    """Pack lossy payload into a container (raw planes for now)."""
+    Layout:
+      "LY01"                        4 bytes, magic / format version
+      metadata
+      frame_count                   u32
+      levels                        u32, quantization level count (needed to know bits_per_value)
+      per frame: y_len, cb_len, cr_len   3x u32
+      encoded_length                u32
+      encoded_data                  all pixel values, bit-packed with
+                                     bits_per_value bits each, back to back
+    """
     output = bytearray()
     output.extend(b"LY01")
     pack_metadata(output, metadata)
     append_u32(output, len(frames))
+    append_u32(output, levels)
 
     for frame in frames:
-        for plane in (frame.y, frame.cb, frame.cr):
-            append_u32(output, len(plane))
-            output.extend(bytes(plane))
+        append_u32(output, len(frame.y))
+        append_u32(output, len(frame.cb))
+        append_u32(output, len(frame.cr))
 
+    bits_per_value = (levels - 1).bit_length()  # e.g. levels=64 -> 6 bits per value instead of 8
+
+    print("packing lossy", flush=True)
+    writer = BitWriter()
+    for frame in tqdm(frames, desc="bit-packing frames", file=sys.stdout):
+        for plane in (frame.y, frame.cb, frame.cr):
+            for value in plane:
+                writer.write_bits(format(value, f"0{bits_per_value}b"))
+    encoded_data = writer.flush()
+
+    append_u32(output, len(encoded_data))
+    output.extend(encoded_data)
     return bytes(output)
 
 
 def unpack_lossy_bitstream(data: bytes) -> tuple[Y4MMetadata, list[Frame]]:
-    """Unpack lossy container."""
+    """Reverses pack_lossy_bitstream: reads the bit-packed quantized values
+    back out (decode_lossy then still needs to dequantize and interpolate
+    them into full-size pixel frames)."""
     reader = ByteReader(data)
-
-    magic = reader.read_bytes(4)
-    if magic != b"LY01":
+    if reader.read_bytes(4) != b"LY02":
         raise ValueError("Invalid lossy container")
 
     metadata = unpack_metadata(reader)
     frame_count = reader.read_u32()
+    levels = reader.read_u32()
 
-    frames: list[Frame] = []
-    for _ in range(frame_count):
-        y = reader.read_bytes(reader.read_u32())
-        cb = reader.read_bytes(reader.read_u32())
-        cr = reader.read_bytes(reader.read_u32())
+    plane_lengths = [(reader.read_u32(), reader.read_u32(), reader.read_u32()) for _ in range(frame_count)]
+
+    encoded_length = reader.read_u32()
+    encoded_data = reader.read_bytes(encoded_length)
+
+    bits_per_value = (levels - 1).bit_length()
+    bit_reader = BitReader(encoded_data)
+
+    def read_value() -> int:
+        bits = "".join(str(bit_reader.read_bit()) for _ in range(bits_per_value))
+        return int(bits, 2)
+
+    frames = []
+    print("unpacking lossy", flush=True)
+    for y_len, cb_len, cr_len in tqdm(plane_lengths, desc="bit-unpacking frames", file=sys.stdout):
+        y = bytes(read_value() for _ in range(y_len))
+        cb = bytes(read_value() for _ in range(cb_len))
+        cr = bytes(read_value() for _ in range(cr_len))
         frames.append(Frame(y=y, cb=cb, cr=cr))
 
     return metadata, frames
@@ -782,92 +872,91 @@ def unpack_lossy_bitstream(data: bytes) -> tuple[Y4MMetadata, list[Frame]]:
 
 def encode_lossless(metadata: Y4MMetadata, frames: list[Frame]) -> bytes:
     print("encoding lossless")
-
-    # -- Test --
-    test_lossless_roundtrip(metadata, frames)
-
-    # ---encoding spatial compression---
     starting_color = 128
-    predictive_frames = []
-    # predictive_frames format: list of SignedFrame: SignedFrame has lists for y, cb, cr each habe list:
-    # starting_value difference_0 difference_1 difference_2 etc.
+
+    # Step 1: spatial prediction. Each pixel is replaced by the difference to
+    # the previous pixel in the same plane, so the resulting values cluster
+    # tightly around zero wherever the image is locally smooth.
     print("spatial compression", flush=True)
+    predictive_frames: list[SignedFrame] = []
     for frame in tqdm(frames, file=sys.stdout):
         predictive_frame_y = encode_predictive_compression(frame.y, starting_color)
         predictive_frame_cb = encode_predictive_compression(frame.cb, starting_color)
         predictive_frame_cr = encode_predictive_compression(frame.cr, starting_color)
         predictive_frames.append(SignedFrame(y=predictive_frame_y, cb=predictive_frame_cb, cr=predictive_frame_cr))
 
-    # ---encoding temporal compression---
+    # Step 2: temporal prediction. Each spatially-predicted frame is replaced
+    # by its difference to the previous spatially-predicted frame, so areas
+    # that don't change between frames collapse to (mostly) zero.
     print("temporal compression", flush=True)
-    temporal_and_spatial_encoded_frames = temporal_predictive_compression(predictive_frames)
-    # for i in range(100):
-    #    print(predictive_frames[1].y[i])
+    signed_frames = temporal_predictive_compression(predictive_frames)
 
-    print("decoding lossless")
-    # ---decoding temporal compression---
+    # Step 3: serialize the resulting residuals into the bitstream (Huffman
+    # coding happens inside pack_lossless_bitstream).
+    return pack_lossless_bitstream(metadata, signed_frames)
+
+
+def decode_lossless(bitstream: bytes) -> tuple[Y4MMetadata, list[Frame]]:
+    # Step 1: parse the container and Huffman-decode the residuals back out.
+    metadata, signed_frames = unpack_lossless_bitstream(bitstream)
+
+    # Step 2: undo the temporal prediction, oldest frame first, since every
+    # later frame's real value depends on the previous frame already being
+    # reconstructed.
     print("temporal decompression", flush=True)
-    spatial_encoded_frames = decode_temporal_compression(temporal_and_spatial_encoded_frames)
+    spatial_encoded_frames = decode_temporal_compression(signed_frames)
 
-    # ---decoding spatial compression---
+    # Step 3: undo the spatial prediction within each frame, turning the
+    # signed residual lists back into normal 0-255 pixel bytes.
     print("spatial decompression", flush=True)
-    frames_2 = []
+    frames: list[Frame] = []
     for frame in tqdm(spatial_encoded_frames, file=sys.stdout):
         y_frame = bytes(decode_predictive_compression(frame.y))
         cb_frame = bytes(decode_predictive_compression(frame.cb))
         cr_frame = bytes(decode_predictive_compression(frame.cr))
-        frames_2.append(Frame(y=y_frame, cb=cb_frame, cr=cr_frame))
+        frames.append(Frame(y=y_frame, cb=cb_frame, cr=cr_frame))
 
-    display_frame(metadata, frames_2[100])
-
-    return pack_lossless_bitstream(metadata, frames_2)
-
-
-def decode_lossless(bitstream: bytes) -> tuple[Y4MMetadata, list[Frame]]:
-    return unpack_lossless_bitstream(bitstream)
+    return metadata, frames
 
 
 def encode_lossy(metadata: Y4MMetadata, frames: list[Frame]) -> bytes:
     print("encoding lossy")
-    # ---encoding temporal compression---
+
+    # Step 1: temporal compression by dropping every second frame. The
+    # dropped frames are deliberately NOT refilled here - that only happens
+    # after decoding (see decode_lossy). This way the packed bitstream really
+    # only contains half as many frames, instead of throwing frames away and
+    # immediately reconstructing them again before packing.
     print("temporal compression", flush=True)
-    reduced_frames = []
-    for frame_index in tqdm(range(0, len(frames), 2), file=sys.stdout):
-        reduced_frames.append(frames[frame_index])
+    reduced_frames = lossy_temporal_reduce(frames)
 
-    print("decoding lossy")
-    print("temporal decompression", flush=True)
-    # ---decoding temporal compression---
-    # generating frames
-    y_colors = []
-    cb_colors = []
-    cr_colors = []
-    for frame in reduced_frames:
-        y_colors.append(frame.y)
-        cb_colors.append(frame.cb)
-        cr_colors.append(frame.cr)
+    # Step 2: spatial compression by reducing every pixel from 256 possible
+    # values down to `levels` values (quantization).
+    print("spatial compression (256 -> 64 colors)", flush=True)
+    quantized_frames = [quantize_frame(f, levels=64) for f in tqdm(reduced_frames, file=sys.stdout)]
 
-    y_colors_interpolated = interpolate_frames(y_colors)
-    cb_colors_interpolated = interpolate_frames(cb_colors)
-    cr_colors_interpolated = interpolate_frames(cr_colors)
-
-    interpolated_frames = []
-    for i in tqdm(range(len(reduced_frames)), file=sys.stdout):
-        interpolated_frames.append(reduced_frames[i])
-        if i < len(y_colors_interpolated):
-            frame = Frame(y=bytes(y_colors_interpolated[i]), cb=bytes(cb_colors_interpolated[i]),
-                          cr=bytes(cr_colors_interpolated[i]))
-            interpolated_frames.append(frame)
-
-    # there may be one less interpolated frame so to get to the full frame count one extra frame needs to be added.
-    interpolated_frames.append(reduced_frames[-1])
-
-    return pack_lossy_bitstream(metadata, interpolated_frames)
+    # Step 3: bit-pack the quantized values into the bitstream.
+    return pack_lossy_bitstream(metadata, quantized_frames)
 
 
 def decode_lossy(bitstream: bytes) -> tuple[Y4MMetadata, list[Frame]]:
-    """Implement lossy decoding here."""
-    return unpack_lossy_bitstream(bitstream)
+    # Step 1: parse the container and unpack the bit-packed quantized values.
+    metadata, quantized_frames = unpack_lossy_bitstream(bitstream)
+
+    # Step 2: undo the quantization. The exact original color is lost, so
+    # each value is mapped back to the midpoint of its quantization bucket.
+    print("spatial decompression (64 -> ~256 colors)", flush=True)
+    dequantized_frames = [dequantize_frame(f, levels=64) for f in quantized_frames]
+
+    # Step 3: undo the temporal compression by refilling the frames that were
+    # dropped during encoding, averaging neighboring frames to approximate
+    # them. This restores the original frame count. Note: the very last
+    # frame has no following neighbor to interpolate from, so it is simply
+    # duplicated as a rough stand-in instead.
+    print("temporal decompression", flush=True)
+    frames = lossy_temporal_interpolate(dequantized_frames)
+
+    return metadata, frames
 
 
 # ============================================================================
@@ -901,8 +990,8 @@ def main() -> None:
 
     metadata, frames = read_y4m(SOURCE_FILE)
 
-    run_lossless_pipeline(metadata, frames)
     run_lossy_pipeline(metadata, frames)
+    run_lossless_pipeline(metadata, frames)
 
     print("Finished.")
     print(f"Created: {LOSSLESS_BIN_FILE}")
