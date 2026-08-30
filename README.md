@@ -62,8 +62,13 @@
    
 - **Temporal Compression (Inter-frame):** [Wie nutzt ihr die Ähnlichkeit zwischen aufeinanderfolgenden Bildern aus, ohne Bit-Fehler zu riskieren?]
   - Lossless Temporal Compression stores the first frame completely, after that it only saves the differences for every pixel to the same pixel on the previous frame. 
-   This achieves compression because you store smaller numbers. 
+   This achieves compression because you store smaller numbers. It works especially well on top of Spatial Compression because if a frame looks similar to the previous one, 
+   its residuals will look similar too. Since a lot of these differences are close to 0 it also increases the effectiveness of Huffman coding. 
    To avoid bit-errors this is a purely integer operation with no rounding involved. It also makes the compression perfectly reversible so no data gets lost.
+
+- **Huffman Coding:**
+  - Spatial and Temporal Compression alone doesn't shrink the file size. The actual reduction only happens in combination with Huffman coding. 
+   Huffman assigns codes to each residual value after the compression. The length of the codes varies depending on how often they occur. 
 
 ### 2.2 Lossy Mode
 
