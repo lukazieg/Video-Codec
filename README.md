@@ -61,14 +61,13 @@
    This method works well for Lossless Mode because its perfectly reversible by adding all the differences back together. 
    
 - **Temporal Compression (Inter-frame):** [Wie nutzt ihr die Ähnlichkeit zwischen aufeinanderfolgenden Bildern aus, ohne Bit-Fehler zu riskieren?]
-  - Lossless Temporal Compression stores the first frame completely, after that it only saves the differences for every pixel to the same pixel on the previous frame. 
-   This achieves compression because you store smaller numbers. It works especially well on top of Spatial Compression because if a frame looks similar to the previous one, 
-   its residuals will look similar too. Since a lot of these differences are close to 0 it also increases the effectiveness of Huffman coding. 
-   To avoid bit-errors this is a purely integer operation with no rounding involved. It also makes the compression perfectly reversible so no data gets lost.
+  - Our implementation of Lossless Temporal Compression stores the first frame completely, after that it only saves the differences for every pixel to the same pixel on the previous frame. 
+   This achieves compression because the stored numbers are smaller. It also works on top of our Spatial Compression to enhance the encoding even further because the similarities over time are getting encoded as well. Since a lot of these differences are close to 0 it also increases the effectiveness of the Huffman encoding by increasing the number of values that only need a short code instead of a long one. 
+   Because each frame builds upon its previous ones and each pixel on its previous, there can not be any rounding of values to avoid changing the later values. It also makes the compression perfectly reversible so no data gets lost.
 
 - **Huffman Coding:**
   - Spatial and Temporal Compression alone doesn't shrink the file size. The actual reduction only happens in combination with Huffman coding. 
-   Huffman assigns codes to each residual value after the compression. The length of the codes varies depending on how often they occur. 
+   Huffman assigns codes to each residual value after the compression. The length of the codes varies depending on how often they occur, so having less variety of values to usually encode means much less code length needed. 
 
 ### 2.2 Lossy Mode
 
