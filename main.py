@@ -704,11 +704,11 @@ def pack_lossless_bitstream(metadata: Y4MMetadata, signed_frames: list[SignedFra
       huffman table                shared code table for every residual value in the video
       frame_count                  u32
       per frame: y_len, cb_len, cr_len   3x u32, so the decoder knows where
-                                          each frame's planes end inside the
+                                          each frames planes end inside the
                                           single flat value stream below
       encoded_length                u32
       encoded_data                  the Huffman-coded bits for ALL residuals
-                                     of the whole video, back to back
+                                     of the whole video
     """
     output = bytearray()
     output.extend(b"LS01")
@@ -747,7 +747,7 @@ def pack_lossless_bitstream(metadata: Y4MMetadata, signed_frames: list[SignedFra
 def unpack_lossless_bitstream(data: bytes) -> tuple[Y4MMetadata, list[SignedFrame]]:
     """Reverses pack_lossless_bitstream: reads the container back into
     residual frames (decode_lossless then still needs to undo temporal and
-    spatial prediction to turn these into real pixel data)."""
+    spatial prediction to turn these into real pixel data"""
     reader = ByteReader(data)
 
     magic = reader.read_bytes(4)
@@ -792,7 +792,7 @@ def pack_lossy_bitstream(metadata: Y4MMetadata, frames: list[Frame], levels: int
     """Packs already-quantized frames into a bit-packed container. Since
     every quantized value is guaranteed to be in [0, levels), each value only
     needs as many bits as required to represent (levels - 1), instead of a
-    full byte per pixel.
+    full byte per pixel
 
     Layout:
       "LY01"                        4 bytes, magic / format version
