@@ -54,13 +54,13 @@
 ## 2. Algorithms
 
 ### 2.1 Lossless Mode
-- **Spatial Compression (Intra-frame):** [Welches Verfahren nutzt ihr innerhalb eines Bildes, um keine Informationen zu verlieren? (z. B. Vorhersage-Modelle oder verlustfreies RLE)]
+- **Spatial Compression (Intra-frame):** 
   - The method used to achieve LosslessSC is Differential Pulse-Code Modulation. This means instead of storing all data for every pixel, only the difference to the previous pixel gets saved.
    This works well because neighbouring pixels in a picture are often similar which leads to small differential values.
    The values get stored in a 1D-Array with a set startvalue of 128 ([128, value1, value2,...]). This is done for each Plane, each with its own array.
    This method works well for Lossless Mode because its perfectly reversible by adding all the differences back together. 
    
-- **Temporal Compression (Inter-frame):** [Wie nutzt ihr die Ähnlichkeit zwischen aufeinanderfolgenden Bildern aus, ohne Bit-Fehler zu riskieren?]
+- **Temporal Compression (Inter-frame):** 
   - Our implementation of Lossless Temporal Compression stores the first frame completely, after that it only saves the differences for every pixel to the same pixel on the previous frame. 
    This achieves compression because the stored numbers are smaller. It also works on top of our Spatial Compression to enhance the encoding even further because the similarities over time are getting encoded as well. Since a lot of these differences are close to 0 it also increases the effectiveness of the Huffman encoding by increasing the number of values that only need a short code instead of a long one. 
    Because each frame builds upon its previous ones and each pixel on its previous, there can not be any rounding of values to avoid changing the later values. It also makes the compression perfectly reversible so no data gets lost.
@@ -71,12 +71,12 @@
 
 ### 2.2 Lossy Mode
 
-- **Spatial Compression (Intra-frame):** [Wo spart ihr hier massiv Daten ein? (z. B. Farbraum-Reduktion, Quantisierung oder Downsampling)]
+- **Spatial Compression (Intra-frame):** 
    - Lossy Spatial Compression uses quantization, this means that each 8-bit pixel value (0-255) is mapped into one of 64 buckets (value // step, step = 256 // levels).
     This reduces the number of possible pixel values from 256 (8-bit) to 64 (6-bit) which in turn saves storage space, because the bitstream uses 6-bit instead of 8-bit values.  
     When decoding each bucket is approximated by its middle value (quantized * step + step // 2), which minimizes rounding errors. 
 
-- **Temporal Compression (Inter-frame):** [Wie geht ihr mit Bewegungen oder Änderungen zwischen Frames um, wenn Perfektion nicht das Ziel ist?]
+- **Temporal Compression (Inter-frame):** 
   - Lossy Temporal Compression deletes every second frame during encoding, the remaining frames get packed into the bitstream. 
     During decoding the missing frames are reconstructed, using the averages of the previous and next frame for each pixel (current_pixel + last_pixel) // 2.
     Since the last frame doesn't have a next frame, the second to last frame gets duplicated and put into that spot. 
@@ -88,11 +88,18 @@
 
 | **File / Mode**           | **File Size (Bytes / MB)** | **Compression Ratio** |
 | ------------------------- | -------------------------- | --------------------- |
-| **source.y4m (Original)** |                            | 1:1 (Reference)       |
-| **Lossless (.bin)**       |                            |                       |
-| **Lossy (.bin)**          |                            |                       |
+| **source.y4m (Original)** | 405.002                    | 1:1 (Reference)       |
+| **Lossless (.bin)**       | 92.977                     | 4,36:1                |
+| **Lossy (.bin)**          | 151.877                    | 2,67:1                |
 
-[Beschreibt die Kompressionseigenschaften eures Codecs möglichst detailliert. Erläutert also nicht nur, dass komprimiert wird, sondern auch wie, an welchen Stellen besonders viele Daten eingespart werden und welche Auswirkungen das auf Dateigröße und Qualität hat.]
+### 3.1.1 Lossless Mode
+ - Lossless Mode achieves compression through 3 combined steps, spatial and temporal prediction and Huffman coding. The predictions reduce most pixel values close to 0. This makes Huffman coding extremely efficient.
+  The compression rate is 4,36:1. In addition the compression and decompression is completely lossless meaning every pixel is 100% reconstructed.
+  Static or very similar parts of the video are where compression is highest, while fast changing parts don't achieve very high compression.
+
+### 3.1.2 Lossy Mode
+ - Lossy Mode achieves compression through 2 separate steps. First every second frame gets deleted which leads to 50% fewer frames. Then every pixel value of the remaining frames gets reduced from 8-bit to 6-bit.
+  Unlike Lossless Mode, lossy's compression isn't impacted by video content. The compression rate is 2,67:1 and there is a visible drop in quality which you can see when watching the reduced video.
 
 ### 3.2 Visual Artifact Analysis
 
