@@ -86,9 +86,9 @@
 
 | **File / Mode**           | **File Size (Bytes / MB)** | **Compression Ratio** |
 | ------------------------- | -------------------------- | --------------------- |
-| **source.y4m (Original)** | 405.002                    | 1:1 (Reference)       |
-| **Lossless (.bin)**       | 92.977                     | 4,36:1                |
-| **Lossy (.bin)**          | 151.877                    | 2,67:1                |
+| **source.y4m (Original)** | 405,002 MB                 | 1:1 (Reference)       |
+| **Lossless (.bin)**       | 92,977 MB                  | 4,36:1                |
+| **Lossy (.bin)**          | 151,877 MB                 | 2,67:1                |
 
 ### 3.1.1 Lossless Mode
  - Lossless Mode achieves compression through 3 combined steps, spatial and temporal prediction and Huffman coding. The predictions reduce most pixel values close to 0. This makes Huffman coding extremely efficient.
