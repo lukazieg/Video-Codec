@@ -31,7 +31,7 @@
 #### 1.2.1 Lossless
 | Field | Bytes | Description |
 | -------- | -------- | -------- |
-| Huffman-Table | 4 + N * (4 + 1 + M) | Number of entries followed by N entries (each entry: i32 value + code length + Huffman Code) |
+| Huffman-Table | 4 + N * (4 + 1 + M) | Number of entries followed by N entries (each entry: i32 value + code length + M (Huffman Code)) |
 | #Frames | 4 | Number of frames |
 | Length of image plane | #Frames * 12 | per frame: y_len, cb_len, cr_len |
 | Payload length | 4 | Length of following payload |
@@ -44,7 +44,7 @@
 | Field | Bytes | Description |
 | -------- | -------- | -------- |
 | #Frames | 4 | Number of frames |
-| Levels | 4 | Number of quantization levels |
+| #Levels | 4 | Number of quantization levels |
 | Length of image plane | #Frames * 12 | per frame: y_len, cb_len, cr_len |
 | Payload length | 4 | Length of following payload in bytes |
 | Payload | varies | Quantized values for all Y, Cb and Cr values of each frame |
