@@ -222,6 +222,8 @@ class SignedFrame:
 
 
 def single_color_inter_frame_prediction(current_colors: list[int], next_colors: list[int]) -> list[int]:
+    """This function calculates the differences between the values of the pixels at the same location for two frames.
+    It writes these differences into a new list."""
     pixel_amount = len(current_colors)
     y_temporal_differences = []
     for pixel_index in range(pixel_amount):
@@ -233,6 +235,9 @@ def single_color_inter_frame_prediction(current_colors: list[int], next_colors: 
 
 
 def temporal_predictive_compression(signed_frames: list[SignedFrame]) -> list[SignedFrame]:
+    """This function calculates the difference in the values between frames and returns a list of frames only
+    containing the differences. The first item of the list is the unaltered first frame on which the following frames
+    are based."""
     temporal_compressed_frames = [signed_frames[0]]  # starting frame
     frames_amount = len(signed_frames)
     for frame_index in tqdm(range(frames_amount - 1), total=frames_amount, initial=1, file=sys.stdout):
@@ -247,6 +252,8 @@ def temporal_predictive_compression(signed_frames: list[SignedFrame]) -> list[Si
 
 
 def decode_single_color_inter_frame_prediction(current_colors: list[int], next_colors: list[int]) -> list[int]:
+    """This function calculates back from the difference values of two frames to the original value. It only does this
+    for a single color."""
     pixel_amount = len(current_colors)
     y_temporal_differences = []
     for pixel_index in range(pixel_amount):
@@ -258,6 +265,7 @@ def decode_single_color_inter_frame_prediction(current_colors: list[int], next_c
 
 
 def decode_temporal_compression(temporal_frames: list[SignedFrame]) -> list[SignedFrame]:
+    """This function calculates back from the difference values of two frames to the original value."""
     last_frame = temporal_frames[0]
     frames = [last_frame]
     for frame_index in tqdm(range(1, len(temporal_frames)), total=len(temporal_frames), initial=1, file=sys.stdout):
@@ -271,6 +279,8 @@ def decode_temporal_compression(temporal_frames: list[SignedFrame]) -> list[Sign
 
 
 def encode_predictive_compression(colors: bytes, starting_color: int) -> list[int]:
+    """This function calculates the differences between the values of neighboring pixels.
+    It writes these differences into a new list."""
     compressed_colors = [starting_color]
     previous_color = starting_color
     for i in range(0, len(colors)):
@@ -281,6 +291,7 @@ def encode_predictive_compression(colors: bytes, starting_color: int) -> list[in
 
 
 def decode_predictive_compression(differences: list[int]) -> list[int]:
+    """This function calculates back from the difference values of two pixels to the original value."""
     colors = []
     starting_color = differences[0]
     previous_color = starting_color
@@ -292,6 +303,8 @@ def decode_predictive_compression(differences: list[int]) -> list[int]:
 
 
 def interpolate_frames(colors: list[list[int]]) -> list[int]:
+    """This function is used to generate frames to increase the frame rate. It does so by averaging the color values
+    of the same pixel of two frames."""
     interpolated_monochrom_frames = []
     for frame_index in tqdm(range(1, len(colors)), file=sys.stdout):
         last_colors = colors[frame_index - 1]
@@ -307,11 +320,12 @@ def interpolate_frames(colors: list[list[int]]) -> list[int]:
 
 
 def print_metadata(metadata: Y4MMetadata, frame: Frame) -> None:
+    """Outputs the metadata on the console."""
     print("width: " + str(metadata.width))
     print("height: " + str(metadata.height))
     print("amount pixels: " + str(metadata.width * metadata.height))
     print("fps: " + str(metadata.fps))
-    print("interlacingt: " + str(metadata.interlacing))
+    print("interlacing: " + str(metadata.interlacing))
     print("aspect_ratio: " + str(metadata.aspect_ratio))
     print("chroma: " + str(metadata.chroma))
     print("y pixel per frame: " + str(len(frame.y)))
@@ -320,6 +334,7 @@ def print_metadata(metadata: Y4MMetadata, frame: Frame) -> None:
 
 
 def display_frame(metadata: Y4MMetadata, frame: Frame) -> None:
+    """Displays a target frame. Used for debugging."""
     y_image = Image.frombytes("L", (int(metadata.width), int(metadata.height)), frame.y)
     # fewer chroma values because of 4:2:0
     cb_image = Image.frombytes("L", (metadata.width // 2, metadata.height // 2),

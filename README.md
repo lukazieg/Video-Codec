@@ -31,7 +31,7 @@
 #### 1.2.1 Lossless
 | Field | Bytes | Description |
 | -------- | -------- | -------- |
-| Huffman-Table | 4 + N * (4 + 1 + M) | Number of entries followed by N entries (each entry: i32 value + code length + Huffman Code) |
+| Huffman-Table | 4 + N * (4 + 1 + M) | Number of entries followed by N entries (each entry: i32 value + code length + M (Huffman Code)) |
 | #Frames | 4 | Number of frames |
 | Length of image plane | #Frames * 12 | per frame: y_len, cb_len, cr_len |
 | Payload length | 4 | Length of following payload |
@@ -44,7 +44,7 @@
 | Field | Bytes | Description |
 | -------- | -------- | -------- |
 | #Frames | 4 | Number of frames |
-| Levels | 4 | Number of quantization levels |
+| #Levels | 4 | Number of quantization levels |
 | Length of image plane | #Frames * 12 | per frame: y_len, cb_len, cr_len |
 | Payload length | 4 | Length of following payload in bytes |
 | Payload | varies | Quantized values for all Y, Cb and Cr values of each frame |
@@ -73,7 +73,7 @@
 
 - **Spatial Compression (Intra-frame):** [Wo spart ihr hier massiv Daten ein? (z. B. Farbraum-Reduktion, Quantisierung oder Downsampling)]
    - Lossy Spatial Compression uses quantization, this means that each 8-bit pixel value (0-255) is mapped into one of 64 buckets (value // step, step = 256 // levels).
-    This reduces the number of possible pixel values from 256 (8-bit) to 64 (6-bit) which in turn saves storage space. 
+    This reduces the number of possible pixel values from 256 (8-bit) to 64 (6-bit) which in turn saves storage space, because the bitstream uses 6-bit instead of 8-bit values.  
     When decoding each bucket is approximated by its middle value (quantized * step + step // 2), which minimizes rounding errors. 
 
 - **Temporal Compression (Inter-frame):** [Wie geht ihr mit Bewegungen oder Änderungen zwischen Frames um, wenn Perfektion nicht das Ziel ist?]
