@@ -391,11 +391,6 @@ def read_i32(reader: ByteReader) -> int:
     return struct.unpack("<i", reader.read_bytes(4))[0]
 
 
-# ---- Huffman tree construction ----
-# Huffman coding assigns short bit-codes to frequent values and long bit-codes
-# to rare ones, so the total number of bits needed to store a stream of
-# values shrinks whenever the value distribution is skewed (as it is for our
-# residuals, which cluster tightly around zero).
 
 class HuffmanNode:
     def __init__(self, value: int | None = None, left: HuffmanNode | None = None,
@@ -453,11 +448,6 @@ def build_code_table(tree: HuffmanNode) -> dict[int, str]:
     return codes
 
 
-# ---- Packing / unpacking the code table itself ----
-# The Huffman code table is not fixed in advance; it depends on the actual
-# residual values in this video. The decoder therefore has no way to rebuild
-# it on its own, so it has to be written into the bitstream alongside the
-# compressed data.
 
 def pack_huffman_table(buffer: bytearray, codes: dict[int, str]) -> None:
     append_u32(buffer, len(codes))
@@ -742,7 +732,7 @@ def unpack_lossy_bitstream(data: bytes) -> tuple[Y4MMetadata, list[Frame]]:
     back out (decode_lossy then still needs to dequantize and interpolate
     them into full-size pixel frames)."""
     reader = ByteReader(data)
-    if reader.read_bytes(4) != b"LY02":
+    if reader.read_bytes(4) != b"LY01":
         raise ValueError("Invalid lossy container")
 
     metadata = unpack_metadata(reader)
@@ -853,7 +843,7 @@ def decode_lossy(bitstream: bytes) -> tuple[Y4MMetadata, list[Frame]]:
     # Step 2: undo the quantization. The exact original color is lost, so
     # each value is mapped back to the midpoint of its quantization bucket.
     print("spatial decompression (64 -> ~256 colors)", flush=True)
-    dequantized_frames = [dequantize_frame(f, levels=64) for f in quantized_frames]
+    dequantized_frames = [dequantize_frame(f, levels=64) for f in tqdm(quantized_frames)]
 
     # Step 3: undo the temporal compression by refilling the frames that were
     # dropped during encoding, averaging neighboring frames to approximate
@@ -897,8 +887,9 @@ def main() -> None:
 
     metadata, frames = read_y4m(SOURCE_FILE)
 
-    run_lossy_pipeline(metadata, frames)
     run_lossless_pipeline(metadata, frames)
+    run_lossy_pipeline(metadata, frames)
+    
 
     print("Finished.")
     print(f"Created: {LOSSLESS_BIN_FILE}")
