@@ -12,7 +12,6 @@
 - The magic number is at the top of the Container. It is used to determine whether the container is Lossy (LY01) or Lossless (LS01)
  
 ### 1.1 File Header
-[Beschreibt hier den Aufbau eures Dateikopfs. Welche Metadaten speichert ihr (z. B. Auflösung, Framerate, Modus) und wie viele Bytes belegt jedes Feld?]
 - The file header is the same for Lossy and Lossless. It contains following information:
   | Field | Bytes | Description |
   | -------- | -------- | -------- |
@@ -26,7 +25,6 @@
   (4 + N): The first 4 bytes store a number that tells you how many bytes follow (N). Those N bytes then contain the actual field value (as ASCII text).
 
 ### 1.2 Frame Organization & Payload
-[Wie sind die eigentlichen Bilddaten nach dem Header sortiert? Wie unterscheidet ihr zwischen Keyframes und Differenz-Frames? Skizziert hier kurz den Aufbau eures Bitstreams.]
 - This part of the bitstream differs between Lossless and Lossy. 
 #### 1.2.1 Lossless
 | Field | Bytes | Description |
@@ -102,5 +100,9 @@
   Unlike Lossless Mode, lossy's compression isn't impacted by video content. The compression rate is 2,67:1 and there is a visible drop in quality which you can see when watching the reduced video.
 
 ### 3.2 Visual Artifact Analysis
+ - In fast moving parts of the video there is visible ghosting, especially when watching it frame by frame. Fast moving objects appear duplicated slightly less visible in their new or old location. 
+  This happens when deleted frames, in which an object moved, get reconstructed. To do so the previous and next frame get averaged but the object might be in different positions in those frames.
+  This blends both positions together and results in ghosting.
+ - Even though color quantization was used to compress, it is not very visible in the lossy video. This is because we only reduced the number of possible values from 256 to 64. If the reduction was stronger it would probably be visible on the video as well.
+ - Block artifacts do not occur since we never operate on blocks of pixels but rather on every individual pixel. 
 
-[Beschreibt hier ehrlich die Qualität eures Lossy-Ergebnisses. Treten Block-Artefakte, Farbrauschen oder "Geisterbilder" bei Bewegungen auf? Warum ist das so?]
