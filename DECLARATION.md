@@ -36,3 +36,5 @@ geprüft, verifiziert und überarbeitet.
 | **ChatGPT 5.6 Luna** | **Lossless SC, Lossless TC, Lossy TC** | Fragen zur Syntax von Python beantwortet.                                                           |
 | **ChatGPT 5.6 Luna** | **Lossless SC, Lossless TC, Lossy TC** | Hilfe bei der Lokalisierung und Behebung von Fehlern und Bugs.                                      |
 | **ChatGPT 5.6 Luna** | **Lossless SC, Lossless TC, Lossy TC** | Fragen zu verschiedenen Kompressionsverfahren beantwortet.                                          |
+| **Claude Sonnet 4.6**| **Verständnis**                        | Verständnis einzelner funktionen                                                                    |
+| **Claude Sonnet 4.6**| **Formulierungen**                     | Hilfe bei bestimmten start fachbezogenen Formulierungen für Doku                                    |
