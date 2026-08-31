@@ -11,8 +11,8 @@
 | Mitglied      | Spezifische Aufgaben & Beiträge                                                         |
 |:--------------|:----------------------------------------------------------------------------------------|
 | Simon Merz    | Lossy Spetial Compression, Header-Architektur und Bitstream                             |
-| Jonas Pieper  | Lossy Temporal Compression, Lossless Temporal Compression, Lossless Spetial Compression |
-| Lukas Ziegler | Documentation, ReadME, Declaration                                                      |
+| Jonas Pieper  | Lossy Temporal Compression, Lossless Temporal Compression, Lossless Spatial Compression |
+| Lukas Ziegler | Documentation, README, Declaration                                                      |
 
 ---
 
@@ -36,5 +36,5 @@ geprüft, verifiziert und überarbeitet.
 | **ChatGPT 5.6 Luna** | **Lossless SC, Lossless TC, Lossy TC** | Fragen zur Syntax von Python beantwortet.                                                           |
 | **ChatGPT 5.6 Luna** | **Lossless SC, Lossless TC, Lossy TC** | Hilfe bei der Lokalisierung und Behebung von Fehlern und Bugs.                                      |
 | **ChatGPT 5.6 Luna** | **Lossless SC, Lossless TC, Lossy TC** | Fragen zu verschiedenen Kompressionsverfahren beantwortet.                                          |
-| **Claude Sonnet 4.6**| **Verständnis**                        | Verständnis einzelner funktionen                                                                    |
-| **Claude Sonnet 4.6**| **Formulierungen**                     | Hilfe bei bestimmten start fachbezogenen Formulierungen für Doku                                    |
+| **Claude Sonnet 4.6**| **Verständnis**                        | Verständnis einzelner Funktionen                                                                    |
+| **Claude Sonnet 4.6**| **Formulierungen**                     | Hilfe bei bestimmten stark fachbezogenen Formulierungen für Doku                                    |
